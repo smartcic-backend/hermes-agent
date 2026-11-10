@@ -1,0 +1,40 @@
+#
+# Local single-container deployment that keeps all Hermes data inside this
+# project (./.hermes-data, the same directory native runs use as HERMES_HOME).
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+# Values come from the project-root .env (gitignored):
+#   HERMES_UID / HERMES_GID                 host user owning ./.hermes-data
+#   HERMES_DASHBOARD_BASIC_AUTH_USERNAME     dashboard + webapp sign-in
+#   HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
+#
+# Ports bind to 127.0.0.1 only (host:container): 8642 gateway API/health,
+# 8119->9119 dashboard, 8120->9120 webapp (enable it under `webapp:` in
+# .hermes-data/config.yaml and set webapp.public_url to http://localhost:8120).
+# Bridge networking is used because host networking on Docker Desktop for
+# macOS is opt-in.
+#
+# Never run a native `hermes gateway` against ./.hermes-data while this
+# container is up: both would write the same session store.
+#
+services:
+  hermes:
+    build: .
+    image: hermes-agent
+    container_name: hermes
+    restart: unless-stopped
+    volumes:
+      - ./.hermes-data:/opt/data
+    environment:
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?set it in .env}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?set it in .env}
+    ports:
+      - "127.0.0.1:8642:8642"
+      - "127.0.0.1:8119:9119"
+      - "127.0.0.1:8120:9120"
+    command: ["gateway", "run"]

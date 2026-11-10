@@ -315,6 +315,52 @@ def test_home_refusing_sockets_listens_on_private_fallback_both_clients_reach(sh
     assert not (home / "gateway.sock.path").exists()
 
 
+def test_home_ignoring_socket_mode_listens_on_private_fallback(short_home: Path, monkeypatch):
+    """Docker Desktop's ``fakeowner`` bind mount (macOS) accepts the in-home socket but ignores its
+    mode: it reads back 0755 whatever chmod sets, so every authenticated client refuses it
+    (``unsafe_control_permissions``). The listener must move to the private temp-dir socket + pointer
+    and leave no in-home socket behind for clients to prefer."""
+    import os
+    import stat
+
+    from hermes_cli.gateway_runtime_discovery import query_identify
+
+    home = short_home.resolve()
+    home.chmod(0o700)
+    in_home = home / "gateway.sock"
+    real_start, real_chmod = asyncio.start_unix_server, os.chmod
+
+    async def fakeowner_start(client_connected_cb, path=None, **kwargs):
+        server = await real_start(client_connected_cb, path=path, **kwargs)
+        if Path(path) == in_home:
+            real_chmod(path, 0o755)  # what the mount reports for a socket node
+        return server
+
+    def fakeowner_chmod(path, mode, *a, **k):
+        if os.fspath(path) == str(in_home):
+            return None  # silently ignored by the mount
+        return real_chmod(path, mode, *a, **k)
+
+    monkeypatch.setattr(asyncio, "start_unix_server", fakeowner_start)
+    monkeypatch.setattr(os, "chmod", fakeowner_chmod)
+
+    async def scenario():
+        server = GatewayControlServer(home, verb_handlers={"identify": lambda: {"pid": 12}})
+        assert await server.start()
+        try:
+            assert not os.path.lexists(in_home)
+            target = Path((home / "gateway.sock.path").read_text(encoding="utf-8"))
+            assert server._bind_path == target and target.name == "control.sock"
+            assert stat.S_IMODE(target.lstat().st_mode) & 0o077 == 0
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: (query_identify(home, timeout=3), identify_gateway(home)))
+        finally:
+            await server.stop()
+
+    assert _run(scenario()) == ({"pid": 12}, {"pid": 12})
+    assert not (home / "gateway.sock.path").exists()
+
+
 def test_bind_refused_for_other_reasons_still_fails(short_home: Path, monkeypatch):
     # A live sibling (EADDRINUSE) must keep failing loudly — no silent fallback
     # that would let two gateways for one home both look healthy.
