@@ -339,3 +339,6 @@ infografico/
 /pm/.lock.json.lock
 
 apps/desktop/.dist-build*
+
+# Local Hermes data dir (HERMES_HOME): secrets, sessions, DBs — never commit
+.hermes-data/
