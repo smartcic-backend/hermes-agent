@@ -115,6 +115,17 @@ def _publish_pointer(pointer_file: Path, bind_path: Path) -> None:
         raise
 
 
+def _private_socket(path: Path) -> bool:
+    """True when ``path`` reads back as a socket owned by us with no group/other bits — what
+    authenticated clients require (``hermes_cli.gateway_runtime_discovery._private_node``)."""
+    try:
+        node = path.lstat()
+    except OSError:
+        return False
+    return (stat.S_ISSOCK(node.st_mode) and node.st_uid == os.getuid()  # windows-footgun: ok — POSIX listener
+            and not stat.S_IMODE(node.st_mode) & 0o077)
+
+
 def resolve_server_socket_path(home: Path) -> tuple[Path, Optional[Path]]:
     """Return ``(bind_path, pointer_file)``; pointer_file is set only for the temp-dir fallback."""
     direct = Path(home) / _SOCKET_FILENAME
@@ -250,6 +261,17 @@ class GatewayControlServer:
                 raise
             logger.warning("Control socket cannot be created in %s (%s); listening in a private temp directory",
                            self._home, exc.strerror or exc)
+            pointer_file = Path(self._home) / _POINTER_FILENAME
+            bind_path = await self._bind_posix(_fallback_socket_path(self._home), pointer_file)
+        if pointer_file is None and not _private_socket(bind_path):
+            # Docker Desktop's ``fakeowner`` bind mount (macOS) accepts the socket but ignores
+            # its mode/owner, so every authenticated client would refuse it: drop it and use
+            # the private temp-dir socket + pointer instead.
+            logger.warning("Control socket in %s is not private (mode/owner not honoured); "
+                           "listening in a private temp directory", self._home)
+            self._server.close()
+            await self._server.wait_closed()
+            bind_path.unlink(missing_ok=True)
             pointer_file = Path(self._home) / _POINTER_FILENAME
             bind_path = await self._bind_posix(_fallback_socket_path(self._home), pointer_file)
         self._bind_path = bind_path
