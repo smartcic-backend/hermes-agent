@@ -27,6 +27,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./.hermes-data:/opt/data
+      # smartcic skills / MCP server; config.yaml reaches them as ${HERMES_HOME}/../smartcic
+      - ./smartcic:/opt/smartcic:ro
     environment:
       - HERMES_UID=${HERMES_UID:-10000}
       - HERMES_GID=${HERMES_GID:-10000}

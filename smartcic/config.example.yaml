@@ -1,0 +1,47 @@
+# 合併進 $HERMES_HOME/config.yaml（本專案為 .hermes-data/config.yaml）的片段。
+# 只放設定，不放機密；機密寫在 $HERMES_HOME/.env（見 smartcic/env.example）。
+#
+# 路徑都從 HERMES_HOME 往上一層找 smartcic/，本機與 Docker 共用同一份設定：
+#   本機   HERMES_HOME=<repo>/.hermes-data  → <repo>/smartcic
+#   Docker HERMES_HOME=/opt/data             → /opt/smartcic（docker-compose.local.yml 掛載）
+
+skills:
+  # 相對路徑以 HERMES_HOME 為基準
+  external_dirs:
+    - ../smartcic/skills
+
+mcp_servers:
+  # 日報：讀 Notion 名單＋向 MessageCenter 取訊息（get_roster_daily_reports），
+  # 寫入 Notion 日報（upsert_daily_report）。daily-report skill 用。
+  # args 的 ${HERMES_HOME} 在 gateway 執行時永遠是「根」資料目錄（多 profile 也一樣），
+  # 所以這行只適用 default profile。其他 profile 請改填絕對路徑，例如
+  #   本機 <repo>/smartcic/mcp/daily_report_writer.py、Docker /opt/smartcic/mcp/daily_report_writer.py
+  daily_report_writer:
+    command: python3
+    args: ["${HERMES_HOME}/../smartcic/mcp/daily_report_writer.py"]
+    env:
+      NOTION_TOKEN: "${NOTION_TOKEN}"
+      MC_API_KEY: "${MC_API_KEY}"
+      MC_MCP_URL: "${MC_MCP_URL}"
+      # 必填：Notion「日報」與「應交日報名單」資料庫 id
+      NOTION_DAILY_REPORT_DATABASE_ID: "${NOTION_DAILY_REPORT_DATABASE_ID}"
+      NOTION_ROSTER_DATABASE_ID: "${NOTION_ROSTER_DATABASE_ID}"
+
+  # MessageCenter：LINE 訊息（list_recent_senders 等），唯讀。daily-report-roster-bind 用。
+  messagecenter:
+    url: "${MC_MCP_URL}"
+    headers:
+      X-API-Key: "${MC_API_KEY}"
+
+  # Notion 官方 MCP，只開放 roster-bind 需要的三個工具（日報寫入一律走 daily_report_writer）
+  # 名單用 API-post-search 以標題「應交日報名單」找出，不寫死資料庫 id
+  notion:
+    command: npx
+    args: ["-y", "@notionhq/notion-mcp-server"]
+    env:
+      NOTION_TOKEN: "${NOTION_TOKEN}"
+    tools:
+      include:
+        - API-post-search
+        - API-query-data-source
+        - API-patch-page
