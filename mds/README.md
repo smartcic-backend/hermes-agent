@@ -7,6 +7,7 @@
 | [linux-docker-deploy.md](linux-docker-deploy.md) | 在 Linux 主機用 Docker 部署 |
 | [mac-local-deploy.md](mac-local-deploy.md) | 在 Mac 本機部署（不用 Docker），附 Mac 上用 Docker 的差異 |
 | [local-model-setup.md](local-model-setup.md) | 設定地端 Ollama 模型 |
+| [../smartcic/README.md](../smartcic/README.md) | 日報 skill：LINE 訊息（MessageCenter）整理後上傳 Notion |
 
 ## 共通觀念
 
